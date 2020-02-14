@@ -1,6 +1,8 @@
 ---
 - name: Wait for Zookeeper Status
   shell: "exec 42<>/dev/tcp/127.0.0.1/{{zookeeper.properties.clientPort}}; echo -e 'srvr' >&42; cat <&42"
+  args:
+    executable: /bin/bash
   register: srvr
   until: srvr.rc == 0
   retries: 60
@@ -8,6 +10,8 @@
 
 - name: Wait for Zookeeper Quorum
   shell: "exec 42<>/dev/tcp/127.0.0.1/{{zookeeper.properties.clientPort}}; echo -e 'srvr' >&42; cat <&42"
+  args:
+    executable: /bin/bash
   register: srvr
   until: '"Latency min/avg/max:" in srvr.stdout'
   retries: 60
