@@ -1,6 +1,6 @@
 ---
 - name: Wait for Zookeeper Status
-  shell: "exec 42<>/dev/tcp/127.0.0.1/{{zookeeper.properties.clientPort}}; echo -e 'srvr' >&42; cat <&42"
+  shell: "{{zookeeper_health_check_command}}"
   args:
     executable: /bin/bash
   register: srvr
@@ -9,7 +9,7 @@
   delay: 5
 
 - name: Wait for Zookeeper Quorum
-  shell: "exec 42<>/dev/tcp/127.0.0.1/{{zookeeper.properties.clientPort}}; echo -e 'srvr' >&42; cat <&42"
+  shell: "{{zookeeper_health_check_command}}"
   args:
     executable: /bin/bash
   register: srvr

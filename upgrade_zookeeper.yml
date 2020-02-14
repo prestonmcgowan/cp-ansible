@@ -45,7 +45,7 @@
         msg: "Current version: {{zookeeper_current_version}}   Upgrade to version: {{confluent_package_version}}"
 
     - name: Get Leader/Follower
-      shell: exec 42<>/dev/tcp/127.0.0.1/{{zookeeper.properties.clientPort}}; echo -e "srvr" >&42; cat <&42 | grep Mode
+      shell: "{{zookeeper_health_check_command}} | grep Mode"
       args:
         executable: /bin/bash
       register: leader_query
