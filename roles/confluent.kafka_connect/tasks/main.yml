@@ -2,7 +2,6 @@
 - include_role:
     name: confluent.common
   when: not common_role_completed|bool
-  
 # Install Packages
 - name: Install the Kafka Connect Packages
   yum:
@@ -20,14 +19,14 @@
 # Configure environment
 - name: Create Connect Distributed Group
   group:
-    name: "{{kafka_connect.group}}"
+    name: "{{kafka_connect_group}}"
 
 - name: Create Connect Distributed User
   user:
-    name: "{{kafka_connect.user}}"
+    name: "{{kafka_connect_user}}"
     comment: "Connect Distributed User"
     system: yes
-    group: "{{kafka_connect.group}}"
+    group: "{{kafka_connect_group}}"
 
 - include_role:
     name: confluent.ssl
@@ -38,14 +37,15 @@
     keystore_storepass: "{{kafka_connect_keystore_storepass}}"
     keystore_keypass: "{{kafka_connect_keystore_keypass}}"
     service_name: kafka_connect
+    hostnames: "{{ [inventory_hostname] }}"
   when: kafka_connect_ssl_enabled|bool or kafka_broker_listeners[kafka_connect_kafka_listener_name]['ssl_enabled'] | default(ssl_enabled) | bool
 
 - name: Configure Kerberos
   include_role:
     name: confluent.kerberos
   vars:
-    kerberos_group: "{{kafka_connect.group}}"
-    kerberos_user: "{{kafka_connect.user}}"
+    kerberos_group: "{{kafka_connect_group}}"
+    kerberos_user: "{{kafka_connect_user}}"
     kerberos_keytab_path: "{{kafka_connect_kerberos_keytab_path}}"
     kerberos_handler: "restart connect distributed"
   when: kafka_broker_listeners[kafka_connect_kafka_listener_name]['sasl_protocol'] | default(sasl_protocol) | normalize_sasl_protocol == 'GSSAPI'
@@ -55,34 +55,37 @@
     src: connect-distributed.properties.j2
     dest: "{{kafka_connect.config_file}}"
     mode: 0640
-    owner: "{{kafka_connect.user}}"
-    group: "{{kafka_connect.group}}"
+    owner: "{{kafka_connect_user}}"
+    group: "{{kafka_connect_group}}"
   notify:
     - restart connect distributed
+
+- name: Managing Connectors
+  include_tasks: connectors.yml
 
 - name: Create Logs Directory
   file:
     path: "{{kafka_connect.appender_log_path}}"
-    group: "{{kafka_connect.group}}"
-    owner: "{{kafka_connect.user}}"
+    state: directory
+    group: "{{kafka_connect_group}}"
+    owner: "{{kafka_connect_user}}"
     mode: '764'
-    recurse: yes
 
 - name: Create Connect Distributed log4j Config
   template:
     src: connect_distributed_log4j.properties.j2
     dest: "{{kafka_connect.log4j_file}}"
     mode: 0640
-    owner: "{{kafka_connect.user}}"
-    group: "{{kafka_connect.group}}"
+    owner: "{{kafka_connect_user}}"
+    group: "{{kafka_connect_group}}"
   notify:
     - restart connect distributed
 
 - name: Create Service Override Directory
   file:
     path: "{{kafka_connect.systemd_override | dirname}}"
-    owner: "{{kafka_connect.user}}"
-    group: "{{kafka_connect.group}}"
+    owner: "{{kafka_connect_user}}"
+    group: "{{kafka_connect_group}}"
     state: directory
     mode: 0640
 
@@ -91,8 +94,8 @@
     src: override.conf.j2
     dest: "{{ kafka_connect.systemd_override }}"
     mode: 0640
-    owner: "{{kafka_connect.user}}"
-    group: "{{kafka_connect.group}}"
+    owner: "{{kafka_connect_user}}"
+    group: "{{kafka_connect_group}}"
   notify:
     - reload systemd
     - restart connect distributed
@@ -110,27 +113,15 @@
     enabled: yes
     state: started
 
-- name: Wait for API to return 200 - HTTP
-  uri:
-    url: "http://localhost:{{kafka_connect_rest_port}}/connectors"
-    status_code: 200
-  register: result
-  until: result.status == 200
-  retries: 60
-  delay: 10
+- name: Health Check
+  include_tasks: health_check.yml
   when:
-    - not kafka_connect_ssl_enabled|bool
     - health_checks_enabled|bool
+    - not ansible_check_mode
 
-- name: Wait for API to return 200 - HTTPS
-  uri:
-    url: "https://localhost:{{kafka_connect_rest_port}}/connectors"
-    status_code: 200
-    validate_certs: no
-  register: result
-  until: result.status == 200
-  retries: 60
-  delay: 10
-  when:
-    - kafka_connect_ssl_enabled|bool
-    - health_checks_enabled|bool
+- name: Register connector configs and remove deleted connectors
+  kafka_connectors:
+    connect_url: "{{kafka_connect_http_protocol}}://{{groups['kafka_connect'][0]}}:{{kafka_connect_rest_port}}/connectors"
+    active_connectors: "{{ kafka_connect_connectors }}"
+  when: kafka_connect_connectors is defined
+  run_once: true
